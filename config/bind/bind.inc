@@ -203,12 +203,35 @@ EOD;
 			} elseif (is_ipaddr($listenon)) {
 				$bind_listenon .= $listenon."; ";
 			} else {
-				$listenon = pfSense_get_interface_addresses(convert_friendly_interface_to_real_interface_name($listenon));
-				if (is_ipaddr($listenon['ipaddr'])) {
-					$bind_listenon .= $listenon['ipaddr']."; ";
-				}
-				if (is_ipaddrv6($listenon['ipaddr6'])) {
-					$bind_listenonv6 .= $listenon['ipaddr6']."; ";
+				/* Get all non-VIP IP addresses on interface (including link-local) */
+				$vips = get_configured_vips_list();
+				$realif = get_real_interface($listenon);
+				foreach(pfSense_getall_interface_addresses($realif) as $ipinfo) {
+					if(is_ipaddrv6($ipinfo))
+						$subnet = explode("/", $ipinfo)[0]."/128";
+					else 
+						$subnet = explode("/", $ipinfo)[0]."/32";
+					foreach ($vips as $vip) {
+						if(($realif === get_real_interface($vip['if'])) && ip_in_subnet($vip['ipaddr'], $subnet)) {
+							continue 2;
+						}
+					}
+					if (is_linklocal($ipinfo)) {
+						/* pfSense_ routines do not always return zone index (scope) for ll */
+						list($ll,$scope) = explode("%", $ipinfo);
+						$ll = explode("/", $ll)[0];
+						if(empty($scope))
+							$ipinfo = $ll . '%' . $realif;
+						else
+							$ipinfo = $ll . '%' . $scope;
+					} else {
+						$ipinfo = explode("/", $ipinfo)[0];
+					}
+					if (is_ipaddrv6($ipinfo)) {
+						$bind_listenonv6 .= $ipinfo."; ";
+					} elseif (is_ipaddr($ipinfo)) {
+						$bind_listenon .= $ipinfo."; ";
+					}
 				}
 			}
 		}
